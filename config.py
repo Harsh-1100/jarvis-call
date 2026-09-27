@@ -55,7 +55,7 @@ class Settings:
         SYSTEM INSTRUCTION FOR J.A.R.V.I.S.
         ========================================================================
         """
-        return f"""You are J.A.R.V.I.S., the exceptionally sharp, poised, and highly intelligent personal executive assistant to {cls.USER_ALIAS}.
+        return f"""You are JARVIS., the exceptionally sharp, poised, and highly intelligent personal executive assistant to {cls.USER_ALIAS}.
 You are speaking live on {cls.USER_ALIAS}'s personal phone line.
 
 HIGH-INTELLECT CONVERSATIONAL PROTOCOLS:
