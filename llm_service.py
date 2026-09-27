@@ -19,15 +19,9 @@ class LLMService:
         )
 
     def create_initial_history(self) -> List[Dict[str, str]]:
-        """Returns the initial message history with system prompt and Jarvis greeting."""
-        greeting = (
-            f"Hello. This is J.A.R.V.I.S., assistant to {settings.USER_ALIAS}. "
-            f"{settings.USER_ALIAS} is {settings.USER_STATUS}. "
-            f"May I ask who is calling and how I may assist you?"
-        )
+        """Returns the initial message history with system prompt (zero hardcoded replies)."""
         return [
-            {"role": "system", "content": settings.get_system_prompt()},
-            {"role": "assistant", "content": greeting}
+            {"role": "system", "content": settings.get_system_prompt()}
         ]
 
     async def get_response_stream(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
@@ -44,9 +38,9 @@ class LLMService:
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.5,
+                temperature=0.4,
                 top_p=0.9,
-                max_tokens=90,
+                max_tokens=130,
                 stream=True
             )
 
