@@ -537,7 +537,7 @@ async def dashboard():
                 <div style="display: flex; gap: 8px; margin-top: 10px; align-items: center; justify-content: space-between;">
                     <label style="font-size: 0.85rem; color: var(--text-dim); display: flex; align-items: center; gap: 6px; cursor: pointer;">
                         <input type="checkbox" id="voiceToggle" checked style="width: auto; cursor: pointer;">
-                        🔊 Voice: <strong>en-GB-RyanNeural</strong>
+                        🔊 Voice: <strong>en-US-AndrewNeural (Smooth Natural)</strong>
                     </label>
                     <div style="display: flex; gap: 6px;">
                         <button id="replayBtn" onclick="replayAudio()" style="display: none; background: #475569; font-size: 0.75rem; padding: 4px 8px;">
