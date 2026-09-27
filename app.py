@@ -168,10 +168,20 @@ async def handle_media_stream(websocket: WebSocket):
                 # Send initial alert to Harsh's Telegram
                 telegram_msg_id = await telegram_service.send_call_started(call_sid, caller_info)
 
-                # Speak initial greeting to the caller
-                initial_greeting = conversation_history[1]["content"]
-                transcript_display.append(f"🤖 **Jarvis:** {initial_greeting}")
-                asyncio.create_task(send_tts_to_caller(initial_greeting))
+                # Dynamically generate opening greeting for the live phone call
+                async def generate_and_speak_greeting():
+                    full_greeting = ""
+                    async for sentence in llm_service.get_response_stream([
+                        {"role": "system", "content": settings.get_system_prompt()},
+                        {"role": "user", "content": "The call has just connected. Answer the phone naturally in one short sentence."}
+                    ]):
+                        full_greeting += " " + sentence
+                        await send_tts_to_caller(sentence)
+                    clean_greeting = full_greeting.strip()
+                    if clean_greeting:
+                        transcript_display.append(f"🤖 **Jarvis:** {clean_greeting}")
+                        conversation_history.append({"role": "assistant", "content": clean_greeting})
+                asyncio.create_task(generate_and_speak_greeting())
 
             elif event == "media":
                 media_payload = data.get("media", {}).get("payload", "")
@@ -515,7 +525,7 @@ async def dashboard():
                 </p>
                 <div class="chat-box" id="chatBox">
                     <div class="msg jarvis">
-                        <strong>J.A.R.V.I.S.:</strong> Hello. This is J.A.R.V.I.S., assistant to Mr. Stark. Mr. Stark is currently in an important meeting. May I ask who is calling and how I may assist you?
+                        <strong>J.A.R.V.I.S.:</strong> Hello, this is J.A.R.V.I.S. on Mr. Stark's line. Mr. Stark is currently occupied. Who's calling, please, and what's this regarding?
                     </div>
                 </div>
 
@@ -552,7 +562,7 @@ async def dashboard():
                     <button type="button" onclick="quickSend('Hi, this is Vikram from tech support. Is Harsh available?')" style="background: #1e293b; color: #94a3b8; font-size: 0.75rem; padding: 4px 8px;">
                         💼 Vikram (Work)
                     </button>
-                    <button type="button" onclick="quickSend('Hi, this is Dr. Aris calling regarding Harsh\'s appointment.')" style="background: #1e293b; color: #94a3b8; font-size: 0.75rem; padding: 4px 8px;">
+                    <button type="button" onclick="quickSend('Hi, this is Dr. Aris calling regarding the medical appointment.')" style="background: #1e293b; color: #94a3b8; font-size: 0.75rem; padding: 4px 8px;">
                         🏥 Dr. Aris
                     </button>
                     <button type="button" onclick="quickSend('Urgent: Server is down, please notify Harsh immediately.')" style="background: #1e293b; color: #ef4444; font-size: 0.75rem; padding: 4px 8px;">
@@ -594,47 +604,51 @@ async def dashboard():
     </div>
 
     <script>
-        let history = [];
-        let currentAudio = null;
-        let lastReply = "";
-        let recognition = null;
-        let isRecording = false;
+        var chatHistory = [];
+        var currentAudio = null;
+        var lastReply = "";
+        var recognition = null;
+        var isRecording = false;
 
         // Initialize Speech Recognition if supported
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-            const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-            recognition = new SpeechRec();
-            recognition.continuous = false;
-            recognition.interimResults = false;
-            recognition.lang = 'en-US';
+        try {
+            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+                recognition = new SpeechRec();
+                recognition.continuous = false;
+                recognition.interimResults = false;
+                recognition.lang = 'en-US';
 
-            recognition.onstart = () => {
-                isRecording = true;
-                document.getElementById('micBtn').innerText = '🔴 Listening...';
-                document.getElementById('micBtn').style.background = '#ef4444';
-                showStatus('🎙️ Listening to your microphone...');
-            };
+                recognition.onstart = () => {
+                    isRecording = true;
+                    document.getElementById('micBtn').innerText = '🔴 Listening...';
+                    document.getElementById('micBtn').style.background = '#ef4444';
+                    showStatus('🎙️ Listening to your microphone...');
+                };
 
-            recognition.onresult = (event) => {
-                const speechResult = event.results[0][0].transcript;
-                document.getElementById('userInput').value = speechResult;
-                hideStatus();
-                sendTurn();
-            };
+                recognition.onresult = (event) => {
+                    const speechResult = event.results[0][0].transcript;
+                    document.getElementById('userInput').value = speechResult;
+                    hideStatus();
+                    sendTurn();
+                };
 
-            recognition.onerror = (event) => {
-                console.error("Speech recognition error:", event.error);
-                stopMic();
-                showStatus('⚠️ Microphone error: ' + event.error);
-                setTimeout(hideStatus, 3000);
-            };
+                recognition.onerror = (event) => {
+                    console.error("Speech recognition error:", event.error);
+                    stopMic();
+                    showStatus('⚠️ Microphone error: ' + event.error);
+                    setTimeout(hideStatus, 3000);
+                };
 
-            recognition.onend = () => {
-                stopMic();
-            };
+                recognition.onend = () => {
+                    stopMic();
+                };
+            }
+        } catch (e) {
+            console.warn("SpeechRec init error:", e);
         }
 
-        function toggleMic() {
+        window.toggleMic = function() {
             if (!recognition) {
                 alert("Speech recognition is not supported in this browser. Please type your message.");
                 return;
@@ -648,68 +662,76 @@ async def dashboard():
                     console.log("Mic start error:", e);
                 }
             }
-        }
+        };
 
-        function stopMic() {
+        window.stopMic = function() {
             isRecording = false;
             const btn = document.getElementById('micBtn');
-            btn.innerText = '🎙️ Mic';
-            btn.style.background = '#0284c7';
+            if (btn) {
+                btn.innerText = '🎙️ Mic';
+                btn.style.background = '#0284c7';
+            }
             hideStatus();
-        }
+        };
 
-        function showStatus(text) {
+        window.showStatus = function(text) {
             const ind = document.getElementById('statusIndicator');
-            document.getElementById('statusText').innerText = text;
-            ind.style.display = 'block';
-        }
+            const txt = document.getElementById('statusText');
+            if (txt) txt.innerText = text;
+            if (ind) ind.style.display = 'block';
+        };
 
-        function hideStatus() {
-            document.getElementById('statusIndicator').style.display = 'none';
-        }
+        window.hideStatus = function() {
+            const ind = document.getElementById('statusIndicator');
+            if (ind) ind.style.display = 'none';
+        };
 
-        function quickSend(sampleText) {
-            document.getElementById('userInput').value = sampleText;
+        window.quickSend = function(sampleText) {
+            const input = document.getElementById('userInput');
+            if (input) input.value = sampleText;
             sendTurn();
-        }
+        };
 
-        async function sendTurn() {
+        window.sendTurn = async function() {
             const input = document.getElementById("userInput");
-            let text = input.value.trim();
+            let text = input ? input.value.trim() : "";
             if (!text) {
-                // If user clicks send without typing, offer a helpful greeting test
                 text = "Hello, is Harsh available?";
             }
 
             appendMsg("caller", "Caller: " + text);
-            input.value = "";
+            if (input) input.value = "";
             showStatus("⚡ Jarvis is thinking & synthesizing speech...");
 
             try {
                 const res = await fetch("/api/test-turn", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ message: text, history: history })
+                    body: JSON.stringify({ message: text, history: chatHistory })
                 });
+                if (!res.ok) {
+                    throw new Error("HTTP error " + res.status);
+                }
                 const data = await res.json();
-                history = data.history;
-                lastReply = data.reply;
-                appendMsg("jarvis", "J.A.R.V.I.S.: " + data.reply);
-                document.getElementById('replayBtn').style.display = 'inline-block';
+                chatHistory = data.history || [];
+                lastReply = data.reply || "";
+                appendMsg("jarvis", "J.A.R.V.I.S.: " + lastReply);
+                const replayBtn = document.getElementById('replayBtn');
+                if (replayBtn) replayBtn.style.display = 'inline-block';
 
-                // Play voice if toggle enabled
-                if (document.getElementById("voiceToggle").checked && data.reply) {
-                    playVoice(data.reply);
+                const voiceToggle = document.getElementById("voiceToggle");
+                if (voiceToggle && voiceToggle.checked && lastReply) {
+                    playVoice(lastReply);
                 } else {
                     hideStatus();
                 }
             } catch (err) {
                 hideStatus();
-                appendMsg("jarvis", "J.A.R.V.I.S.: [Error: " + err + "]");
+                appendMsg("jarvis", "J.A.R.V.I.S.: [Error: " + err.message + "]");
             }
-        }
+        };
 
-        function playVoice(text) {
+        window.playVoice = function(text) {
             showStatus("🔊 Playing J.A.R.V.I.S. neural voice...");
             if (currentAudio) {
                 currentAudio.pause();
@@ -724,25 +746,25 @@ async def dashboard():
                 console.log("Audio play blocked by browser:", e);
                 showStatus("⚠️ Click '🔁 Replay Voice' if audio was blocked by browser");
             });
-        }
+        };
 
-        function replayAudio() {
+        window.replayAudio = function() {
             if (lastReply) {
                 playVoice(lastReply);
             }
-        }
+        };
 
-        async function endAndSummarize() {
-            if (history.length === 0) {
+        window.endAndSummarize = async function() {
+            if (chatHistory.length === 0) {
                 alert("Please have a brief conversation with Jarvis first.");
                 return;
             }
-            let transcript = history.map(h => (h.role === 'assistant' ? 'Jarvis: ' : 'Caller: ') + h.content).join("\n");
+            let transcript = chatHistory.map(h => (h.role === 'assistant' ? 'Jarvis: ' : 'Caller: ') + h.content).join(String.fromCharCode(10));
             
             const summaryCard = document.getElementById("summaryCard");
             const summaryText = document.getElementById("summaryText");
-            summaryCard.style.display = "block";
-            summaryText.innerText = "⏳ Generating AI summary and sending to Telegram...";
+            if (summaryCard) summaryCard.style.display = "block";
+            if (summaryText) summaryText.innerText = "⏳ Generating AI summary and sending to Telegram...";
 
             try {
                 const res = await fetch("/api/test-summary", {
@@ -751,74 +773,110 @@ async def dashboard():
                     body: JSON.stringify({ transcript: transcript })
                 });
                 const data = await res.json();
-                summaryText.innerText = data.summary;
+                if (summaryText) summaryText.innerText = data.summary || "Summary generated.";
             } catch (e) {
-                summaryText.innerText = "Failed to generate summary: " + e;
+                if (summaryText) summaryText.innerText = "Failed to generate summary: " + e.message;
             }
-        }
+        };
 
-        function appendMsg(cls, text) {
+        window.appendMsg = function(cls, text) {
             const box = document.getElementById("chatBox");
+            if (!box) return;
             const div = document.createElement("div");
             div.className = "msg " + cls;
             div.innerText = text;
             box.appendChild(div);
             box.scrollTop = box.scrollHeight;
-        }
+        };
 
-        async function loadWhitelist() {
-            const res = await fetch("/api/whitelist");
-            const data = await res.json();
-            document.getElementById("modeSelect").value = data.mode;
-            const listDiv = document.getElementById("whitelistList");
-            listDiv.innerHTML = "";
-            data.whitelist.forEach(item => {
-                const row = document.createElement("div");
-                row.className = "whitelist-item";
-                row.innerHTML = `
-                    <span><strong>${item.contact_name || 'Contact'}</strong>: ${item.phone_number}</span>
-                    <button class="del-btn" onclick="removeWl('${item.phone_number}')">Remove</button>
-                `;
-                listDiv.appendChild(row);
-            });
-            if (data.whitelist.length === 0) {
-                listDiv.innerHTML = '<div style="color: var(--text-dim); font-size: 0.85rem;">No contacts whitelisted yet.</div>';
+        window.loadWhitelist = async function() {
+            try {
+                const res = await fetch("/api/whitelist");
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                const data = await res.json();
+                const modeSelect = document.getElementById("modeSelect");
+                if (modeSelect) modeSelect.value = data.mode;
+                const listDiv = document.getElementById("whitelistList");
+                if (!listDiv) return;
+                listDiv.innerHTML = "";
+                (data.whitelist || []).forEach(item => {
+                    const row = document.createElement("div");
+                    row.className = "whitelist-item";
+                    row.innerHTML = `
+                        <span><strong>${item.contact_name || 'Contact'}</strong>: ${item.phone_number}</span>
+                        <button class="del-btn" onclick="removeWl('${item.phone_number}')">Remove</button>
+                    `;
+                    listDiv.appendChild(row);
+                });
+                if (!data.whitelist || data.whitelist.length === 0) {
+                    listDiv.innerHTML = '<div style="color: var(--text-dim); font-size: 0.85rem;">No contacts whitelisted yet.</div>';
+                }
+            } catch (e) {
+                console.warn("Could not load whitelist:", e);
+                const listDiv = document.getElementById("whitelistList");
+                if (listDiv) {
+                    listDiv.innerHTML = '<div style="color:#f87171;font-size:0.85rem;">⚠️ Could not connect to server.</div>';
+                }
             }
-        }
+        };
 
-        async function changeMode() {
-            const mode = document.getElementById("modeSelect").value;
-            await fetch("/api/mode", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ mode: mode })
-            });
-        }
+        window.changeMode = async function() {
+            try {
+                const modeSelect = document.getElementById("modeSelect");
+                const mode = modeSelect ? modeSelect.value : "screen_unknown";
+                await fetch("/api/mode", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ mode: mode })
+                });
+            } catch (e) { console.warn("Mode change failed:", e); }
+        };
 
-        async function addWhitelist() {
-            const name = document.getElementById("wlName").value.trim();
-            const num = document.getElementById("wlNumber").value.trim();
-            if (!num) return;
-            await fetch("/api/whitelist", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ phone_number: num, contact_name: name })
-            });
-            document.getElementById("wlName").value = "";
-            document.getElementById("wlNumber").value = "";
+        window.addWhitelist = async function() {
+            try {
+                const nameEl = document.getElementById("wlName");
+                const numEl = document.getElementById("wlNumber");
+                const name = nameEl ? nameEl.value.trim() : "";
+                const num = numEl ? numEl.value.trim() : "";
+                if (!num) return;
+                await fetch("/api/whitelist", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ phone_number: num, contact_name: name })
+                });
+                if (nameEl) nameEl.value = "";
+                if (numEl) numEl.value = "";
+                loadWhitelist();
+            } catch (e) { console.warn("Add whitelist failed:", e); }
+        };
+
+        window.removeWl = async function(num) {
+            try {
+                await fetch("/api/whitelist/" + encodeURIComponent(num), { method: "DELETE" });
+                loadWhitelist();
+            } catch (e) { console.warn("Remove whitelist failed:", e); }
+        };
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const input = document.getElementById("userInput");
+            if (input) {
+                input.addEventListener("keydown", (e) => {
+                    if (e.key === "Enter") sendTurn();
+                });
+            }
             loadWhitelist();
-        }
-
-        async function removeWl(num) {
-            await fetch("/api/whitelist/" + encodeURIComponent(num), { method: "DELETE" });
-            loadWhitelist();
-        }
-
-        document.getElementById("userInput").addEventListener("keydown", (e) => {
-            if (e.key === "Enter") sendTurn();
         });
 
-        loadWhitelist();
+        // Also call loadWhitelist directly in case DOM is already ready
+        if (document.readyState === "complete" || document.readyState === "interactive") {
+            const input = document.getElementById("userInput");
+            if (input) {
+                input.addEventListener("keydown", (e) => {
+                    if (e.key === "Enter") sendTurn();
+                });
+            }
+            loadWhitelist();
+        }
     </script>
 </body>
 </html>
