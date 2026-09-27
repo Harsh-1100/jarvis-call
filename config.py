@@ -17,11 +17,10 @@ class Settings:
     STT_MODEL: str = os.getenv("STT_MODEL", "whisper-large-v3-turbo")
 
     # 2. Voice (Microsoft Neural Edge-TTS)
-    # en-GB-RyanNeural: British, refined, polished, very close to cinematic J.A.R.V.I.S.
-    # Alternatives: en-US-ChristopherNeural, en-US-GuyNeural
-    JARVIS_VOICE: str = os.getenv("JARVIS_VOICE", "en-GB-RyanNeural")
+    # en-US-AndrewNeural (Smooth Natural): warm, modern, slightly deepened executive voice
+    JARVIS_VOICE: str = os.getenv("JARVIS_VOICE", "en-US-AndrewNeural")
     JARVIS_VOICE_RATE: str = os.getenv("JARVIS_VOICE_RATE", "+0%")
-    JARVIS_VOICE_PITCH: str = os.getenv("JARVIS_VOICE_PITCH", "+0Hz")
+    JARVIS_VOICE_PITCH: str = os.getenv("JARVIS_VOICE_PITCH", "-3Hz")
 
     # 3. Telegram Bot Notifications
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
