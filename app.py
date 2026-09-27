@@ -54,13 +54,13 @@ app.add_middleware(
 @app.post("/voice")
 async def handle_inbound_call(request: Request):
     """
-    Twilio calls this webhook when a telephone call arrives.
-    We inspect caller ID, evaluate screening rules, and connect to WebSocket.
+    SignalWire/Twilio calls this webhook when a telephone call arrives.
+    We inspect caller ID, evaluate screening rules, and respond accordingly.
     """
     form_data = await request.form()
     caller_number = form_data.get("From", "Unknown")
     call_sid = form_data.get("CallSid", "unknown_call")
-    host = request.headers.get("host")
+    host = request.headers.get("host", "")
 
     logger.info(f"Incoming call from: {caller_number} (CallSid: {call_sid})")
 
@@ -68,17 +68,25 @@ async def handle_inbound_call(request: Request):
     should_answer, reason = rules_engine.should_answer(caller_number)
     logger.info(f"Screening evaluation: {should_answer} ({reason})")
 
+    # ── BLACKLISTED / FAMILY → silent reject ────────────────────────────
     if not should_answer:
-        # Politely reject or disconnect
+        if reason.startswith("family:"):
+            # Send Telegram ping so Mr. Stark knows who called
+            contact_name = reason.split("family:", 1)[1]
+            asyncio.create_task(
+                telegram_service.send_message(
+                    f"📞 *Missed call — Family*\n"
+                    f"👤 {contact_name}  |  {caller_number}\n"
+                    f"⏰ Called just now. Call was declined automatically."
+                )
+            )
         twiml = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Brian">The recipient is unavailable. Thank you.</Say>
     <Reject />
 </Response>"""
         return Response(content=twiml, media_type="application/xml")
 
-    # Build TwiML to start bidirectional WebSocket audio stream
-    # Note: Twilio requires wss:// (secure) when hosted publicly
+    # ── FULL JARVIS AI SCREENING (unknown / whitelisted callers) ────────
     protocol = "wss" if "https" in str(request.url) or "hf.space" in host or "render" in host else "ws"
     ws_url = f"{protocol}://{host}/media-stream"
 
@@ -92,6 +100,7 @@ async def handle_inbound_call(request: Request):
     </Connect>
 </Response>"""
     return Response(content=twiml, media_type="application/xml")
+
 
 # -------------------------------------------------------------------
 # 2. TWILIO WEBSOCKET MEDIA STREAM (REAL-TIME AUDIO LOOP)
@@ -313,6 +322,24 @@ async def add_whitelist(item: WhitelistItem):
 @app.delete("/api/whitelist/{phone_number}")
 async def remove_whitelist(phone_number: str):
     rules_engine.remove_whitelist(phone_number)
+    return {"status": "success", "removed": phone_number}
+
+class FamilyItem(BaseModel):
+    phone_number: str
+    contact_name: str = ""
+
+@app.get("/api/family")
+async def get_family():
+    return {"family": rules_engine.get_family()}
+
+@app.post("/api/family")
+async def add_family(item: FamilyItem):
+    rules_engine.add_family(item.phone_number, item.contact_name)
+    return {"status": "success", "added": item.dict()}
+
+@app.delete("/api/family/{phone_number}")
+async def remove_family(phone_number: str):
+    rules_engine.remove_family(phone_number)
     return {"status": "success", "removed": phone_number}
 
 # -------------------------------------------------------------------
